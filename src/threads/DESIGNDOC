@@ -1,0 +1,227 @@
+			+--------------------+
+			|         OS         |
+			| PROJECT 1: THREADS |
+			|   DESIGN DOCUMENT  |
+			+--------------------+
+
+---- GROUP 2----
+
+>> Fill in the names, email addresses and matriculation numbers of your group members.
+
+Dhyey Jani <jani.dhyey@iitgn.ac.in> 18110068
+Ayush Kumar <ayush.kumar@iitgn.ac.in> 18110089
+Jay Shah <shah.jay@iitgn.ac.in> 18110154
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+Reference for basic understanding of producer-consumer implementation:
+https://jlmedina123.wordpress.com/2014/04/07/producer-consumer-problem-with-cond-variables/
+
+
+			     ALARM CLOCK
+			     ===========
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+struct thread
+ {
+   int wait_ticks;
+/* It counts for how many ticks the given thread has remained blocked. It’s initial value is equal 
+to the ticks passed in timer_sleep() function and final value is 0. */
+   
+   // The remaining part of the struct is kept as it was in the original template.
+ };
+
+
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe what happens in a call to timer_sleep(),
+>> including the effects of the timer interrupt handler.
+
+When timer_sleep is called, it starts by checking if the interrupts are enabled. If so,
+it disables the interrupts by calling intr_disable function. After doing so, it proceeds 
+to update the wait_ticks attribute of the thread to the number of ticks to be waited. There 
+is a separate function block_check, that again wakes up the thread after the number of ticks 
+amount of time has passed. Finally, in the timer_sleep function, we enable the interrupts again 
+and then exit the function.
+
+
+>> A3: What steps are taken to minimize the amount of time spent in
+>> the timer interrupt handler?
+
+We have defined a function called block_check() that counts the number of ticks for which that 
+thread has been in interrupt mode. When that number of ticks has satisfied the value passed to 
+timer_sleep() function, it immediately calls thread_unblock() to get out of interrupt mode. In this
+way we are minimizing the time spent in that mode.
+
+
+---- SYNCHRONIZATION ----
+
+>> A4: How are race conditions avoided when multiple threads call
+>> timer_sleep() simultaneously?
+
+Race conditions can be avoided by disabling the interrupts.
+
+
+>> A5: How are race conditions avoided when a timer interrupt occurs
+>> during a call to timer_sleep()?
+
+Race conditions can be avoided by disabling the interrupts.
+
+
+---- RATIONALE ----
+
+>> A6: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+
+Some of the other designs involved the use of semaphores. However, we found out that 
+simply blocking the thread (thread_block()) for the given number of ticks after disabling 
+the interrupts performs the task and also this implementation is easier to implement and understand. 
+Hence, we chose this design.
+
+    		     	     PROD/CONS
+	  		     =========
+
+---- SYNCHRONIZATION ----
+
+>> B1: How does your solution guarantee that consumers will hold until
+>> there is something to consume in the buffer?
+
+We are waiting for a signal in a while loop while the buffer is empty (we are 
+checking that by calling the function isempty()), and a message will be 
+displayed on the console indicating that the buffer is empty.
+
+
+>> B2: How does your solution guarantee that producers will hold until
+>> there is some free space in the buffer?
+
+If we get the signal that the buffer is full (from the function isfull()), we 
+are in a while loop while waiting for the signal that indicates that buffer has 
+some empty space again. Meanwhile the message that “Buffer is full” will be printed 
+on screen.
+
+
+>> B3: How does your solution preserve a FIFO semantics i.e., the first
+>> character produced will be the first to be consumed?
+
+We make use of two functions, pushqueue() (it inserts the input characters one
+by one in the buffer when the producer is called) and popqueue() (it removes the
+characters one by one starting from the first element of the buffer [the first 
+element inserted into the buffer by the first call of the producer] when the consumer
+is called). Thus, the first character produced is the first character to be consumed,
+preserving the FIFO semantics. In a nutshell, we are trying to implement the buffer as
+a queue data structure.
+
+
+---- RATIONALE ----
+
+>> B4: Give an intuition for why your program preserves safety.
+
+The critical section of the consumer and the producer functions is protected by locks 
+(lock_acquire and lock_release) to prevent race conditions among threads. For the producer 
+function, this includes the cases in which the buffer is being inserted with input characters,
+and for the consumer, this includes the cases in which values are being read from the buffer.
+
+Secondly, the isfull() and the isempty() function checks if the buffer is full or empty respectively.
+When a producer tries to push an element in the buffer when it is full, cond_wait() is called which
+will release the lock before going to sleep (hence, avoid deadlock). Similarly, when the buffer is 
+empty and a consumer tries to access the buffer, cond_wait() is called.
+
+Thirdly, using the cond_signal() function, when an element is inserted into the empty buffer, we wake
+up the consumers. Similarly, when the buffer is full and we pop an element from the buffer, using cond_signal()
+we wake up the producers.  
+
+
+>> B5: Why did you choose this design? Did you consider other design
+>> alternatives? In what ways is it superior to another design you considered?
+
+As we discussed several possible solutions to synchronization in the lectures (like interrupt controls, 
+test and set, use of condition variables, etc.), we found out that one of the better implementations was
+making the use of condition variables. Hence, we chose this design which makes use of condition variables.
+
+Condition variables are memoryless, so if no consumer is waiting when the signal arrives, it will perform no
+operation. If a consumer is waiting, it will wake up that particular thread. When we use the conditional wait
+function, it automatically releases the locked thread, which leads to more efficient performance.
+
+Also, we found out a LIFO (Last-In First-Out) solution for the producer-consumer problem, and it was in fact 
+slightly easier to implement. However we were required to implement a FIFO (First-In First-Out) system, so we 
+chose this design.
+
+
+			     NARROW BRIDGE
+			     =============
+
+---- SYNCHRONIZATION ----
+
+>> C1: How does your solution guarantee that no more that 3 vehicles
+>> are crossing the bridge in the same direction?
+
+We are using a counter that keeps track of the number of vehicles on the bridge, and if the value of the 
+counter exceeds 3, then we have enforced the condition to not allow another vehicle to enter the bridge.
+
+
+>> C2: What prevents vehicles from opposite directions from crossing the
+>> bridge simultaneously?
+
+For each vehicle, a structure is defined, which has an attribute of direction. We also keep track of the 
+“current direction”, i.e., the direction of the vehicles that are currently on the bridge. If the new 
+vehicle’s direction does not match with the current direction, then it would not be allowed to enter the 
+bridge.
+
+
+>> C3: How does your solution grant priority to emergency vehicles over
+>> the queue of vehicles ahead in the same direction?
+
+>> C4: How do you guarantee that despite having priority, emergency vehicles
+>> do not start crossing the bridge while there are still vehicles crossing
+>> it in the oposite direction?
+
+The emergency vehicle threads are woken up only when some conditions are satisfied. Either there should 
+be 0 vehicles on the bridge, or the vehicles currently on the bridge are moving in the same direction as 
+the one in which the emergency vehicle wants to go. These two conditions are checked in the ExitBridge() function.
+
+
+>> C5: Explain with examples why your solution does not preserve neither
+>> fairness nor freedom from starvation, other than what has been indicated
+>> for emergency vehicles.
+
+---- RATIONALE ----
+
+>> C6: Why did you choose this design? Did you consider other design
+>> alternatives? In what ways is it superior to another design you considered?
+
+
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future semesters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the semester.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future semesters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future semesters or the remaining projects?
+
+>> Any other comments?

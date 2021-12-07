@@ -1,0 +1,297 @@
+		     +--------------------------+
+		     |            OS            |
+		     | PROJECT 2: USER PROGRAMS |
+		     |     DESIGN DOCUMENT      |
+		     +--------------------------+
+
+---- GROUP 2----
+
+>> Fill in the names, email addresses and matriculation numbers of your group members.
+
+Dhyey Jani <jani.dhyey@iitgn.ac.in> 18110068
+Ayush Kumar <ayush.kumar@iitgn.ac.in> 18110089
+Jay Shah <shah.jay@iitgn.ac.in> 18110154
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, or extra credit, please give them here.
+
+Sometimes the Pintos behaves unexpectedly, hence here is the proof of all 77 cases passing:
+https://drive.google.com/file/d/1vOKJHtEmnjEDSZj8CuUrgjX4WFujayg7/view?usp=sharing
+
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+			   ARGUMENT PASSING
+			   ================
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+Ans: No change has been made and no new struct, struct member, global or 
+static variable, etc. has been declared for the purpose of argument passing.
+
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe how you implemented argument parsing.  How do
+>> you arrange for the elements of argv[] to be in the right order?
+>> How do you avoid overflowing the stack page?
+
+Ans: Argument parsing is done by the setup_stack() method. First, the strtok_r() 
+function parses the command line arguments. Two strings, copy[] and argv[] are 
+defined in this function. A pointer to each argument is stored in the copy[] 
+variable. Once all the arguments are collected, we copy the contents of copy[] 
+to argv[] in reverse order since we have to push them in the stack. We are also
+pushing each string into the stack simultaneously. Then we push the array of pointers 
+to the stack and finally push argc (number of arguments) and the return address in the 
+stack. This ensures that elements of argv[] are pushed in the reverse order. 
+If the stack page overflows, then the esp pointer’s validity will fail and a page fault 
+will occur. We are handling the overflowing by making the thread exit with error code -1.
+
+
+---- RATIONALE ----
+
+>> A3: Why does Pintos implement strtok_r() but not strtok()?
+
+Ans: strtok() saves the pointer to the last token found internally, to be used in the 
+next call. Pintos separates the commands into executable name and arguments, so we need 
+to save the address of arguments to be used later. strtok_r() allows us to pass a placeholder 
+pointer to save the address of the last token.
+Another problem with strtok() is the possibility of race condition, where one thread begins to 
+access the last token of a string being used in a function call in another thread. This could 
+happen since the pointer to the last token is saved internally. So Pintos implements strtok_r().
+
+
+>> A4: In Pintos, the kernel separates commands into a executable name
+>> and arguments.  In Unix-like systems, the shell does this
+>> separation.  Identify at least two advantages of the Unix approach.
+
+Ans: One of the advantages of the Unix based approach is that it reduces and saves time running 
+on the kernel because the separation occurs at the user end shell. Another advantage of this approach 
+is protection. It checks for the presence of the executable before passing to avoid kernel failure. 
+
+
+			     SYSTEM CALLS
+			     ============
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+Ans: The struct ‘thread’ in the file thread.h has been modified as shown (only the modification is shown):
+struct thread
+ {
+   struct thread* parent; // Parent process
+   struct semaphore process_child_lock; // Semaphore for child process
+   struct list process_child; // The list of  child processes
+ 
+   struct file *self; // A file pointer for the given thread
+ 
+   struct list files; // List of files for the given thread
+   int fd_count; // The count of file descriptors
+ 
+   int wait_on_tid; // The tid of a thread for which the given thread has to wait
+ 
+   bool success; // a flag for the thread
+   int exit_error; // To store the value to be printed for the exit error
+ };
+
+A new struct ‘child’ is introduced in the file thread.h:
+struct child {
+     int tid; // Thread-ID
+     struct list_elem elem; // List elopement for the thread
+     int exit_error; // To store the value to be printed for the error
+     bool used; // If the child has been loaded/used or not
+   };
+
+A new struct ‘file_process’ is introduced in the file syscall.c:
+struct file_process {
+	struct file* ptr; // The file pointer for the file process
+	int fd; // The file descriptor
+	struct list_elem elem; // The list element
+};
+
+In the file thread.c, the following lock is declared:
+struct lock filesys_lock;
+
+
+>> B2: Describe how file descriptors are associated with open files.
+>> Are file descriptors unique within the entire OS or just within a
+>> single process?
+
+Ans: There is a unique file descriptor for each open file in a process. 
+Processes have their own separate file descriptor counters to be updated 
+whenever a new file is opened. So file descriptors are unique across all 
+the processes, in the entire OS.
+
+
+---- ALGORITHMS ----
+
+>> B3: Describe your code for reading and writing user data from the
+>> kernel.
+
+Ans:  For both the system calls, we first check the validity of the stack pointer. 
+For SYS_READ,  if the file descriptor parameter is set to STDIN_FILENO then it takes 
+the reads data from the standard input. Otherwise, it finds the file from the list of 
+open files in the current thread, acquires the filesys_lock and reads from it. The size 
+of data to be read is provided as a parameter. For SYS_WRITE, if the file descriptor is 
+set to STDOUT_FILENO, it writes data to the standard output. Otherwise, it finds the file 
+from the list of open files in the current thread and writes to it after acquiring filesys_lock.
+
+
+>> B4: Suppose a system call causes a full page (4,096 bytes) of data
+>> to be copied from user space into the kernel.  What is the least
+>> and the greatest possible number of inspections of the page table
+>> (e.g. calls to pagedir_get_page()) that might result?  What about
+>> for a system call that only copies 2 bytes of data?  Is there room
+>> for improvement in these numbers, and how much?
+
+Ans: The least possible number of inspections would be 1. If the call to pagedir_get_page() 
+gives a page head as the output, then we can stop there as it will contain one page of data. 
+For the maximum possible number of inspections, if the page table is not contiguous, then we 
+might have to make 4096 inspections. However, if it is contiguous then we will have to make at 
+max 2 inspections by checking the start and end pointers of the page. 
+If it copies only 2 bytes of data, then the minimum number of inspections will be 1 and the maximum 
+number of inspections will be 2 in any case. There might not be much room for improvement.
+
+
+>> B5: Briefly describe your implementation of the "wait" system call
+>> and how it interacts with process termination.
+
+Ans: The system call wait calls the function process_wait(). We use the 
+struct child to keep track of the status of all child processes. 
+process_wait() takes the thread id TID as parameter and iterates over 
+the list of all child processes until it finds the required one. 
+It then waits for the thread to die and returns with an exit error.
+
+
+>> B6: Any access to user program memory at a user-specified address
+>> can fail due to a bad pointer value.  Such accesses must cause the
+>> process to be terminated.  System calls are fraught with such
+>> accesses, e.g. a "write" system call requires reading the system
+>> call number from the user stack, then each of the call's three
+>> arguments, then an arbitrary amount of user memory, and any of
+>> these can fail at any point.  This poses a design and
+>> error-handling problem: how do you best avoid obscuring the primary
+>> function of code in a morass of error-handling?  Furthermore, when
+>> an error is detected, how do you ensure that all temporarily
+>> allocated resources (locks, buffers, etc.) are freed?  In a few
+>> paragraphs, describe the strategy or strategies you adopted for
+>> managing these issues.  Give an example.
+
+Ans: To avoid processing bad pointer values for user memory access, 
+we have written a address_validate() function that makes sure that the address 
+passed to it is valid. If it is not, then it returns wih an error code -1. 
+In the ‘write’ system call example, the esp pointer and all three 
+arguments are being checked first and only then we proceed to system call.
+In case of an error, a page fault occurs, and we again check whether the 
+address from the fault is valid or not using address_validate(). If it is not valid, 
+we terminate the process with error code -1, thus freeing up the allocated 
+resources.
+
+
+---- SYNCHRONIZATION ----
+
+>> B7: The "exec" system call returns -1 if loading the new executable
+>> fails, so it cannot return before the new executable has completed
+>> loading.  How does your code ensure this?  How is the load
+>> success/failure status passed back to the thread that calls "exec"?
+
+Ans: The parent thread keeps track of the status of all its child threads. 
+The struct child has a variable ‘used’ to keep track of whether it is 
+loaded or not. The exec system call calls the exec_process() method. In this 
+function, after we find the process id, we check whether the process is 
+loaded or not. If it is not, it exits with error code -1.
+
+
+>> B8: Consider parent process P with child process C.  How do you
+>> ensure proper synchronization and avoid race conditions when P
+>> calls wait(C) before C exits?  After C exits?  How do you ensure
+>> that all resources are freed in each case?  How about when P
+>> terminates without waiting, before C exits?  After C exits?  Are
+>> there any special cases?
+
+Ans:
+The struct child maintains a status of the child processes and each 
+parent process contains a list of all its child processes. The 
+child processes set their status inside the parent process. We use 
+a semaphore process_child_lock to prevent race conditions.
+If P calls wait(C) before C exists, P decrements the process_child_lock and 
+waits for C to exit by checking its status. Once C exits it gets 
+the exit status of C. 
+If P calls wait(C) after C terminates, it will decrement process_child_lock 
+and directly check the exit status of C.
+If P terminates before C exits, the list of child processes of P will 
+be freed and there will be no need for a signal from C to P. So, 
+it won’t have any effect on C’s execution.
+If P terminates after C exits, the same thing will happen, other child 
+processes won’t be affected. There don’t seem to be any special cases.
+
+
+---- RATIONALE ----
+
+>> B9: Why did you choose to implement access to user memory from the
+>> kernel in the way that you did?
+
+Ans: Our implementation for checking the access to user memory first checks 
+if it is a user virtual address (using is_user_vaddr()). If it is not, it 
+exits the process. After validating the user virtual address, it returns 
+the kernel virtual address or a null pointer if the address passed to the 
+pagedir_get_page() is unmapped. Before accesing any address, we validate it 
+using the function described above.
+
+
+>> B10: What advantages or disadvantages can you see to your design
+>> for file descriptors?
+
+Ans: 
+Advantages - 
+Since the file descriptors are unique for all processes, different 
+processes will not be able to interfere with each other’s open files, 
+thus preventing race conditions.
+The kernel is aware of all open files, which means it can easily 
+manipulate them.
+Disadvantage - 
+It consumes kernel space, so a lot of open files could potentially 
+crash it. 
+
+
+>> B11: The default tid_t to pid_t mapping is the identity mapping.
+>> If you changed it, what advantages are there to your approach?
+
+Ans: Our team didn’t make any change to the identity mapping of 
+tid_t to pid_t.
+
+
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters or the remaining projects?
+
+>> Any other comments?
